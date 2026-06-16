@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="description" content="Quality Engineering Statistical Analysis — SPC, Cp/Cpk, Histograms" />
+  <title>QE Analyzer · ENG-2518885</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <script>
+    /* Tailwind custom theme extension */
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'brand-blue':  '#3b82f6',
+            'brand-cyan':  '#06b6d4',
+            'brand-green': '#10b981',
+            'brand-amber': '#f59e0b',
+            'brand-red':   '#ef4444',
+            'surface':     '#1e293b',
+            'surface-2':   '#0f172a',
+            'border-dim':  '#334155',
+          },
+          fontFamily: {
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts: JetBrains Mono for data density -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Base reset ── */
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100dvh;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+
+    /* ── Input focus ring ── */
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      box-shadow: 0 0 0 2px #3b82f6;
+    }
+
+    /* ── Status badge pulse ── */
+    .pulse-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #10b981;
+      animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse-ring {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    /* ── Metric card ── */
+    .metric-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 14px 16px;
+      transition: border-color 0.2s;
+    }
+    .metric-card:hover { border-color: #3b82f6; }
+
+    /* ── Capability badge ── */
+    .cap-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Chart container ── */
+    .chart-wrap {
+      position: relative;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 28px; height: 28px;
+      border: 3px solid #334155;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── SPC out-of-control indicator ── */
+    .ooc-warning {
+      background: rgba(239,68,68,0.12);
+      border-left: 3px solid #ef4444;
+      padding: 8px 12px;
+      border-radius: 0 6px 6px 0;
+      font-size: 0.75rem;
+    }
+
+    /* ── Touch-optimized tap target ── */
+    .btn-primary {
+      min-height: 48px;
+      touch-action: manipulation;
+      user-select: none;
+    }
+
+    /* ── Fade-in animation ── */
+    .fade-in {
+      animation: fadeIn 0.35s ease forwards;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Section label ── */
+    .section-eyebrow {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: #64748b;
+    }
+
+    /* ── Tab active ── */
+    .tab-btn.active {
+      background: #3b82f6;
+      color: #fff;
+    }
+  </style>
+</head>
+
+<body class="antialiased">
+
+  <!-- ══════════════ TOP HEADER ══════════════ -->
+  <header class="sticky top-0 z-50 bg-surface-2 border-b border-border-dim px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-xs font-bold">QE</div>
+      <div>
+        <p class="text-sm font-semibold leading-none">QE Analyzer</p>
+        <p class="text-xs text-slate-500 mt-0.5">Statistical Quality Control</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 text-xs text-slate-400">
+      <div class="pulse-dot"></div>
+      <span id="status-label">Ready</span>
+    </div>
+  </header>
+
+  <!-- ══════════════ MAIN ══════════════ -->
+  <main class="max-w-2xl mx-auto px-4 pb-16">
+
+    <!-- ── INPUT SECTION ── -->
+    <section class="mt-5 space-y-4">
+      <p class="section-eyebrow">1 · Data Input</p>
+
+      <!-- Data entry mode tabs -->
+      <div class="flex gap-2 p-1 bg-surface rounded-xl">
+        <button id="tab-manual" class="tab-btn active flex-1 text-xs py-2 rounded-lg font-semibold transition-colors" onclick="switchTab('manual')">Manual Entry</button>
+        <button id="tab-csv"    class="tab-btn flex-1 text-xs py-2 rounded-lg font-semibold transition-colors text-slate-400 hover:text-white" onclick="switchTab('csv')">CSV Upload</button>
+        <button id="tab-sample" class="tab-btn flex-1 text-xs py-2 rounded-lg font-semibold transition-colors text-slate-400 hover:text-white" onclick="switchTab('sample')">Sample Data</button>
+      </div>
+
+      <!-- Manual entry panel -->
+      <div id="panel-manual">
+        <label class="block text-xs text-slate-400 mb-1">Measurements (comma or newline separated)</label>
+        <textarea
+          id="data-input"
+          rows="5"
+          placeholder="e.g.  10.2, 10.4, 9.8, 10.1, 10.3, 9.9 …"
+          class="w-full bg-surface border border-border-dim rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600 resize-none"
+        ></textarea>
+      </div>
+
+      <!-- CSV upload panel -->
+      <div id="panel-csv" class="hidden">
+        <label class="block text-xs text-slate-400 mb-1">Upload CSV (single column of measurements)</label>
+        <div
+          id="drop-zone"
+          class="border-2 border-dashed border-border-dim rounded-xl p-8 text-center cursor-pointer hover:border-brand-blue transition-colors"
+          onclick="document.getElementById('csv-file').click()"
+        >
+          <svg class="w-8 h-8 mx-auto text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+          <p class="text-sm text-slate-400">Tap to select CSV file</p>
+          <p class="text-xs text-slate-600 mt-1">One measurement per row, no header</p>
+        </div>
+        <input type="file" id="csv-file" accept=".csv,.txt" class="hidden" onchange="handleCSV(this)" />
+        <p id="csv-filename" class="text-xs text-brand-green mt-2 hidden"></p>
+      </div>
+
+      <!-- Sample data panel -->
+      <div id="panel-sample" class="hidden space-y-2">
+        <label class="block text-xs text-slate-400 mb-1">Select a demo dataset</label>
+        <button class="w-full text-left metric-card text-sm hover:border-brand-blue transition-colors" onclick="loadSample('bearing')">
+          <span class="text-brand-cyan font-semibold">Bearing Diameter</span>
+          <span class="text-slate-500 text-xs block mt-0.5">50 measurements · Target 25.00 mm</span>
+        </button>
+        <button class="w-full text-left metric-card text-sm hover:border-brand-blue transition-colors" onclick="loadSample('shaft')">
+          <span class="text-brand-cyan font-semibold">Shaft Length</span>
+          <span class="text-slate-500 text-xs block mt-0.5">30 measurements · Target 100.00 mm</span>
+        </button>
+        <button class="w-full text-left metric-card text-sm hover:border-brand-blue transition-colors" onclick="loadSample('torque')">
+          <span class="text-brand-cyan font-semibold">Bolt Torque</span>
+          <span class="text-slate-500 text-xs block mt-0.5">40 measurements · Target 45 N·m</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ── SPECIFICATION LIMITS ── -->
+    <section class="mt-5 space-y-3">
+      <p class="section-eyebrow">2 · Specification Limits (optional)</p>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">LSL (Lower)</label>
+          <input id="lsl-input" type="number" step="any" placeholder="e.g. 9.5"
+            class="w-full bg-surface border border-border-dim rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">USL (Upper)</label>
+          <input id="usl-input" type="number" step="any" placeholder="e.g. 10.5"
+            class="w-full bg-surface border border-border-dim rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-600" />
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <label class="text-xs text-slate-400 whitespace-nowrap">SPC Subgroup Size</label>
+        <select id="subgroup-size"
+          class="flex-1 bg-surface border border-border-dim rounded-xl px-3 py-2 text-sm text-slate-100">
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5" selected>5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- ── ANALYZE BUTTON ── -->
+    <section class="mt-5">
+      <button
+        id="analyze-btn"
+        onclick="runAnalysis()"
+        class="btn-primary w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold rounded-2xl flex items-center justify-center gap-3 transition-colors text-sm tracking-wide"
+      >
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+        Run Analysis
+      </button>
+    </section>
+
+    <!-- ── ERROR BANNER ── -->
+    <div id="error-banner" class="hidden mt-4 ooc-warning text-red-400 fade-in"></div>
+
+    <!-- ══════════════ RESULTS AREA ══════════════ -->
+    <div id="results-area" class="hidden fade-in">
+
+      <!-- ── DESCRIPTIVE STATS ── -->
+      <section class="mt-6">
+        <p class="section-eyebrow mb-3">Descriptive Statistics</p>
+        <div class="grid grid-cols-2 gap-3" id="stats-grid">
+          <!-- Injected by JS -->
+        </div>
+      </section>
+
+      <!-- ── PROCESS CAPABILITY ── -->
+      <section id="capability-section" class="mt-6 hidden">
+        <p class="section-eyebrow mb-3">Process Capability</p>
+        <div class="grid grid-cols-2 gap-3" id="capability-grid"></div>
+        <div id="capability-rating" class="metric-card mt-3"></div>
+      </section>
+
+      <!-- ── SPC NOTE ── -->
+      <div id="spc-note" class="hidden mt-4 text-xs text-amber-400 bg-amber-900/20 border border-amber-800 rounded-xl px-4 py-3"></div>
+
+      <!-- ── HISTOGRAM CHART ── -->
+      <section class="mt-6">
+        <p class="section-eyebrow mb-3">Distribution · Histogram + Normal Fit</p>
+        <div class="chart-wrap">
+          <canvas id="histogram-chart" height="260"></canvas>
+        </div>
+      </section>
+
+      <!-- ── X-BAR CHART ── -->
+      <section id="xbar-section" class="mt-6 hidden">
+        <p class="section-eyebrow mb-3">SPC · X̄-bar Chart</p>
+        <div id="ooc-xbar" class="hidden ooc-warning mb-3 text-red-400"></div>
+        <div class="chart-wrap">
+          <canvas id="xbar-chart" height="240"></canvas>
+        </div>
+        <div class="grid grid-cols-3 gap-2 mt-3" id="xbar-limits"></div>
+      </section>
+
+      <!-- ── R CHART ── -->
+      <section id="rchart-section" class="mt-6 hidden">
+        <p class="section-eyebrow mb-3">SPC · Range (R) Chart</p>
+        <div id="ooc-rchart" class="hidden ooc-warning mb-3 text-red-400"></div>
+        <div class="chart-wrap">
+          <canvas id="rchart-chart" height="240"></canvas>
+        </div>
+        <div class="grid grid-cols-3 gap-2 mt-3" id="rchart-limits"></div>
+      </section>
+
+    </div><!-- /results-area -->
+
+    <!-- ── LOADING OVERLAY ── -->
+    <div id="loading-overlay" class="hidden fixed inset-0 bg-slate-900/80 z-50 flex flex-col items-center justify-center gap-3">
+      <div class="spinner"></div>
+      <p class="text-sm text-slate-300 font-medium">Analyzing dataset…</p>
+    </div>
+
+    <!-- ── FOOTER ── -->
+    <footer class="mt-12 pb-4 text-center text-xs text-slate-600 space-y-1">
+      <p>Quality Engineering Statistical Analyzer v1.0</p>
+      <p>Created by <span class="text-slate-500">ENG-2518885</span> · <a href="mailto:meharibrhanu233@gmail.com" class="text-brand-blue">meharibrhanu233@gmail.com</a></p>
+      <p>Profession: <span class="text-slate-500">Mechanical Engineer</span></p>
+    </footer>
+
+  </main><!-- /main -->
+
+
+  <!-- ══════════════ JAVASCRIPT ══════════════ -->
+  <script>
+    // ─────────────────────────────────────────
+    //  GLOBAL STATE
+    // ─────────────────────────────────────────
+    let histogramChartInstance = null;
+    let xbarChartInstance      = null;
+    let rchartChartInstance    = null;
+    let currentTab = 'manual';
+    let csvData    = null;  // Parsed CSV values array
+
+    // ─────────────────────────────────────────
+    //  SAMPLE DATASETS
+    // ─────────────────────────────────────────
+    const SAMPLE_DATASETS = {
+      bearing: {
+        data: [24.98,25.01,25.03,24.97,25.00,25.02,24.99,25.04,24.96,25.01,
+               24.99,25.00,25.02,24.98,25.01,25.03,25.00,24.97,25.02,24.99,
+               25.01,25.00,25.03,24.98,25.02,24.99,25.01,25.00,24.97,25.03,
+               25.02,25.00,24.99,25.01,24.98,25.03,25.00,25.02,24.97,25.01,
+               25.00,24.99,25.02,25.03,24.98,25.01,25.00,24.99,25.02,24.97],
+        usl: 25.10, lsl: 24.90
+      },
+      shaft: {
+        data: [99.95,100.02,100.05,99.97,100.00,100.03,99.98,100.01,100.04,99.96,
+               100.00,100.02,99.99,100.03,100.01,99.97,100.00,100.05,99.98,100.02,
+               100.00,99.99,100.03,100.01,99.97,100.04,100.00,99.98,100.02,100.01],
+        usl: 100.20, lsl: 99.80
+      },
+      torque: {
+        data: [44.8,45.1,45.3,44.9,45.0,45.2,44.7,45.1,45.4,44.9,
+               45.0,45.2,44.8,45.3,45.1,44.9,45.0,45.2,44.7,45.3,
+               45.0,44.9,45.2,45.1,44.8,45.3,45.0,44.9,45.2,45.1,
+               45.0,44.8,45.3,45.1,45.0,44.9,45.2,44.8,45.1,45.0],
+        usl: 47.0, lsl: 43.0
+      }
+    };
+
+    // ─────────────────────────────────────────
+    //  TAB SWITCHING
+    // ─────────────────────────────────────────
+    function switchTab(tab) {
+      currentTab = tab;
+      ['manual','csv','sample'].forEach(t => {
+        document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
+        const btn = document.getElementById(`tab-${t}`);
+        btn.classList.toggle('active', t === tab);
+        btn.classList.toggle('text-slate-400', t !== tab);
+        btn.classList.toggle('text-white', t === tab);
+      });
+    }
+
+    // ─────────────────────────────────────────
+    //  SAMPLE DATA LOADER
+    // ─────────────────────────────────────────
+    function loadSample(key) {
+      const ds = SAMPLE_DATASETS[key];
+      switchTab('manual');
+      document.getElementById('data-input').value = ds.data.join(', ');
+      document.getElementById('usl-input').value  = ds.usl;
+      document.getElementById('lsl-input').value  = ds.lsl;
+    }
+
+    // ─────────────────────────────────────────
+    //  CSV HANDLER
+    // ─────────────────────────────────────────
+    function handleCSV(input) {
+      const file = input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        const lines = e.target.result.split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean);
+        const values = lines.map(Number).filter(v => !isNaN(v));
+        if (values.length < 2) {
+          showError('CSV file must contain at least 2 numeric values.');
+          return;
+        }
+        csvData = values;
+        const nameEl = document.getElementById('csv-filename');
+        nameEl.textContent = `✓ ${file.name}  (${values.length} values loaded)`;
+        nameEl.classList.remove('hidden');
+      };
+      reader.readAsText(file);
+    }
+
+    // ─────────────────────────────────────────
+    //  MAIN ANALYSIS RUNNER
+    // ─────────────────────────────────────────
+    async function runAnalysis() {
+      clearResults();
+      hideError();
+
+      // Collect data
+      let data;
+      if (currentTab === 'csv') {
+        if (!csvData) { showError('Please upload a CSV file first.'); return; }
+        data = csvData;
+      } else {
+        const raw = document.getElementById('data-input').value.trim();
+        if (!raw) { showError('Please enter measurement data.'); return; }
+        // Parse comma or newline separated values
+        data = raw.split(/[\s,;\n\r]+/).map(s => s.trim()).filter(Boolean).map(Number);
+        if (data.some(isNaN)) { showError('All values must be numeric. Remove any text or symbols.'); return; }
+        if (data.length < 2)  { showError('Enter at least 2 measurement values.'); return; }
+      }
+
+      const uslRaw = document.getElementById('usl-input').value.trim();
+      const lslRaw = document.getElementById('lsl-input').value.trim();
+      const subgroupSize = parseInt(document.getElementById('subgroup-size').value);
+
+      // Build payload
+      const payload = {
+        data,
+        subgroup_size: subgroupSize,
+        ...(uslRaw !== '' && lslRaw !== '' && {
+          usl: parseFloat(uslRaw),
+          lsl: parseFloat(lslRaw)
+        })
+      };
+
+      setLoading(true);
+      setStatus('Analyzing…');
+
+      try {
+        const response = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || result.error) {
+          showError(result.error || 'Analysis failed. Please try again.');
+          setStatus('Error');
+          return;
+        }
+
+        renderResults(result);
+        setStatus('Complete');
+
+      } catch (err) {
+        showError(`Network error: ${err.message}. Ensure the Flask server is running.`);
+        setStatus('Offline');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // ─────────────────────────────────────────
+    //  RENDER RESULTS
+    // ─────────────────────────────────────────
+    function renderResults(result) {
+      document.getElementById('results-area').classList.remove('hidden');
+      document.getElementById('results-area').classList.add('fade-in');
+
+      renderDescriptiveStats(result.descriptive_stats);
+      renderHistogram(result.histogram_data, result.descriptive_stats);
+
+      if (result.capability) {
+        renderCapability(result.capability);
+      }
+
+      if (result.spc_charts) {
+        renderXBarChart(result.spc_charts);
+        renderRChart(result.spc_charts);
+      } else if (result.spc_note) {
+        const noteEl = document.getElementById('spc-note');
+        noteEl.textContent = '⚠ ' + result.spc_note;
+        noteEl.classList.remove('hidden');
+      }
+
+      // Smooth scroll to results
+      document.getElementById('results-area').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // ─────────────────────────────────────────
+    //  DESCRIPTIVE STATISTICS CARDS
+    // ─────────────────────────────────────────
+    function renderDescriptiveStats(s) {
+      const grid = document.getElementById('stats-grid');
+      const metrics = [
+        { label: 'Sample Size (N)', value: s.sample_size, unit: '', color: 'text-brand-cyan' },
+        { label: 'Mean (X̄)',        value: fmt(s.mean),        unit: '', color: 'text-brand-blue' },
+        { label: 'Median',          value: fmt(s.median),      unit: '', color: 'text-brand-blue' },
+        { label: 'Std Dev (σ)',     value: fmt(s.std_dev),     unit: '', color: 'text-brand-amber' },
+        { label: 'Variance (σ²)',   value: fmt(s.variance),    unit: '', color: 'text-brand-amber' },
+        { label: 'Range',           value: fmt(s.data_range),  unit: '', color: 'text-slate-300' },
+        { label: 'Min',             value: fmt(s.min_val),     unit: '', color: 'text-slate-300' },
+        { label: 'Max',             value: fmt(s.max_val),     unit: '', color: 'text-slate-300' },
+        { label: 'Skewness',        value: fmt(s.skewness),    unit: '', color: 'text-slate-400' },
+        { label: 'Kurtosis',        value: fmt(s.kurtosis),    unit: '', color: 'text-slate-400' },
+      ];
+      grid.innerHTML = metrics.map(m => `
+        <div class="metric-card">
+          <p class="text-xs text-slate-500 mb-1">${m.label}</p>
+          <p class="text-lg font-bold ${m.color} font-mono">${m.value}<span class="text-xs text-slate-500 ml-1">${m.unit}</span></p>
+        </div>
+      `).join('');
+    }
+
+    // ─────────────────────────────────────────
+    //  CAPABILITY INDICES
+    // ─────────────────────────────────────────
+    function renderCapability(cap) {
+      document.getElementById('capability-section').classList.remove('hidden');
+      const grid = document.getElementById('capability-grid');
+
+      const capColor = (v) => v >= 1.33 ? 'text-brand-green' : v >= 1.00 ? 'text-brand-amber' : 'text-brand-red';
+
+      grid.innerHTML = [
+        { label: 'Cp (Potential)',  value: cap.cp,         color: capColor(cap.cp) },
+        { label: 'Cpk (Actual)',    value: cap.cpk,        color: capColor(cap.cpk) },
+        { label: 'Cpu (Upper)',     value: cap.cpu,        color: capColor(cap.cpu) },
+        { label: 'Cpl (Lower)',     value: cap.cpl,        color: capColor(cap.cpl) },
+        { label: 'Process σ',      value: fmt(cap.sigma), color: 'text-brand-amber' },
+        { label: 'Est. Yield %',   value: cap.yield_pct,  color: cap.yield_pct >= 99.73 ? 'text-brand-green' : 'text-brand-amber' },
+      ].map(m => `
+        <div class="metric-card">
+          <p class="text-xs text-slate-500 mb-1">${m.label}</p>
+          <p class="text-lg font-bold ${m.color} font-mono">${m.value}</p>
+        </div>
+      `).join('');
+
+      const badgeColor = cap.cpk >= 1.33
+        ? 'bg-green-900/40 text-green-400 border border-green-700'
+        : cap.cpk >= 1.00
+          ? 'bg-amber-900/40 text-amber-400 border border-amber-700'
+          : 'bg-red-900/40 text-red-400 border border-red-700';
+
+      document.getElementById('capability-rating').innerHTML = `
+        <p class="text-xs text-slate-500 mb-2">Process Rating</p>
+        <span class="cap-badge ${badgeColor}">${cap.ppk_rating}</span>
+        <p class="text-xs text-slate-500 mt-2">Cpk ≥ 1.33 = Capable &nbsp;|&nbsp; Cpk ≥ 1.67 = Six Sigma</p>
+      `;
+    }
+
+    // ─────────────────────────────────────────
+    //  HISTOGRAM WITH NORMAL CURVE
+    // ─────────────────────────────────────────
+    function renderHistogram(hist, stats) {
+      if (histogramChartInstance) histogramChartInstance.destroy();
+
+      const ctx = document.getElementById('histogram-chart').getContext('2d');
+      histogramChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: hist.bin_centers.map(v => fmt(v)),
+          datasets: [
+            {
+              label: 'Frequency',
+              data: hist.frequencies,
+              backgroundColor: 'rgba(59, 130, 246, 0.5)',
+              borderColor: '#3b82f6',
+              borderWidth: 1,
+              borderRadius: 3,
+              order: 2,
+            },
+            {
+              label: 'Normal Fit',
+              data: matchNormalToBins(hist),
+              borderColor: '#06b6d4',
+              backgroundColor: 'transparent',
+              borderWidth: 2,
+              type: 'line',
+              tension: 0.4,
+              pointRadius: 0,
+              order: 1,
+            }
+          ]
+        },
+        options: chartDefaults('Distribution')
+      });
+    }
+
+    /**
+     * Sample the normal curve at bin center positions for smooth overlay.
+     * The curve's y values are already scaled to histogram frequency space by the backend.
+     */
+    function matchNormalToBins(hist) {
+      const xCurve = hist.normal_curve.x;
+      const yCurve = hist.normal_curve.y;
+      return hist.bin_centers.map(binX => {
+        // Find the closest x in curve array
+        let closest = 0, minDist = Infinity;
+        xCurve.forEach((cx, i) => {
+          const d = Math.abs(cx - binX);
+          if (d < minDist) { minDist = d; closest = i; }
+        });
+        return yCurve[closest];
+      });
+    }
+
+    // ─────────────────────────────────────────
+    //  X-BAR CHART
+    // ─────────────────────────────────────────
+    function renderXBarChart(spc) {
+      document.getElementById('xbar-section').classList.remove('hidden');
+      if (xbarChartInstance) xbarChartInstance.destroy();
+
+      const xbar = spc.x_bar_chart;
+      const labels = xbar.data_points.map((_, i) => `SG ${i+1}`);
+      const n = xbar.data_points.length;
+
+      // Detect out-of-control points (outside 3σ limits)
+      const ooc = xbar.data_points.filter(v => v > xbar.ucl || v < xbar.lcl);
+      if (ooc.length > 0) {
+        const el = document.getElementById('ooc-xbar');
+        el.textContent = `⚠ ${ooc.length} out-of-control point${ooc.length > 1 ? 's' : ''} detected on X̄ chart.`;
+        el.classList.remove('hidden');
+      }
+
+      const ctx = document.getElementById('xbar-chart').getContext('2d');
+      xbarChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            controlLimitLine('UCL', xbar.ucl, n, '#ef4444'),
+            controlLimitLine('CL',  xbar.center_line, n, '#10b981'),
+            controlLimitLine('LCL', xbar.lcl, n, '#ef4444', [5,5]),
+            {
+              label: 'X̄',
+              data: xbar.data_points,
+              borderColor: '#3b82f6',
+              backgroundColor: xbar.data_points.map(v =>
+                (v > xbar.ucl || v < xbar.lcl) ? '#ef4444' : '#3b82f6'
+              ),
+              borderWidth: 1.5,
+              pointRadius: 4,
+              pointHoverRadius: 6,
+              tension: 0.3,
+            }
+          ]
+        },
+        options: chartDefaults('X̄-bar Chart')
+      });
+
+      renderLimitCards('xbar-limits', xbar);
+    }
+
+    // ─────────────────────────────────────────
+    //  R CHART
+    // ─────────────────────────────────────────
+    function renderRChart(spc) {
+      document.getElementById('rchart-section').classList.remove('hidden');
+      if (rchartChartInstance) rchartChartInstance.destroy();
+
+      const rchart = spc.r_chart;
+      const labels = rchart.data_points.map((_, i) => `SG ${i+1}`);
+      const n = rchart.data_points.length;
+
+      const ooc = rchart.data_points.filter(v => v > rchart.ucl || v < rchart.lcl);
+      if (ooc.length > 0) {
+        const el = document.getElementById('ooc-rchart');
+        el.textContent = `⚠ ${ooc.length} out-of-control point${ooc.length > 1 ? 's' : ''} detected on R chart.`;
+        el.classList.remove('hidden');
+      }
+
+      const ctx = document.getElementById('rchart-chart').getContext('2d');
+      rchartChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            controlLimitLine('UCL', rchart.ucl, n, '#ef4444'),
+            controlLimitLine('CL',  rchart.center_line, n, '#10b981'),
+            ...(rchart.lcl > 0 ? [controlLimitLine('LCL', rchart.lcl, n, '#ef4444', [5,5])] : []),
+            {
+              label: 'Range',
+              data: rchart.data_points,
+              borderColor: '#a855f7',
+              backgroundColor: rchart.data_points.map(v =>
+                (v > rchart.ucl || v < rchart.lcl) ? '#ef4444' : '#a855f7'
+              ),
+              borderWidth: 1.5,
+              pointRadius: 4,
+              tension: 0.3,
+            }
+          ]
+        },
+        options: chartDefaults('R Chart')
+      });
+
+      renderLimitCards('rchart-limits', rchart);
+    }
+
+    // ─────────────────────────────────────────
+    //  CHART HELPERS
+    // ─────────────────────────────────────────
+    function chartDefaults(titleText) {
+      return {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: {
+            labels: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 }, boxWidth: 12 }
+          },
+          title: { display: false }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } },
+            grid:  { color: 'rgba(71,85,105,0.3)' }
+          },
+          y: {
+            ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } },
+            grid:  { color: 'rgba(71,85,105,0.3)' }
+          }
+        }
+      };
+    }
+
+    function controlLimitLine(label, value, n, color, dash = []) {
+      return {
+        label,
+        data: Array(n).fill(value),
+        borderColor: color,
+        borderWidth: 1.5,
+        borderDash: dash,
+        backgroundColor: 'transparent',
+        pointRadius: 0,
+        tension: 0,
+      };
+    }
+
+    function renderLimitCards(containerId, chartData) {
+      document.getElementById(containerId).innerHTML = [
+        { label: 'UCL', value: fmt(chartData.ucl), color: 'text-red-400' },
+        { label: 'CL',  value: fmt(chartData.center_line), color: 'text-green-400' },
+        { label: 'LCL', value: fmt(chartData.lcl), color: 'text-red-400' },
+      ].map(c => `
+        <div class="metric-card text-center">
+          <p class="text-xs text-slate-500">${c.label}</p>
+          <p class="font-bold ${c.color} text-sm font-mono">${c.value}</p>
+        </div>
+      `).join('');
+    }
+
+    // ─────────────────────────────────────────
+    //  UI UTILITIES
+    // ─────────────────────────────────────────
+    function fmt(n) {
+      if (typeof n === 'number') return n.toFixed(4);
+      return n;
+    }
+
+    function setLoading(show) {
+      document.getElementById('loading-overlay').classList.toggle('hidden', !show);
+      const btn = document.getElementById('analyze-btn');
+      btn.disabled = show;
+      btn.textContent = show ? 'Analyzing…' : 'Run Analysis';
+      if (!show) btn.innerHTML = `
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+        Run Analysis`;
+    }
+
+    function setStatus(text) {
+      document.getElementById('status-label').textContent = text;
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error-banner');
+      el.textContent = '⚠ ' + msg;
+      el.classList.remove('hidden');
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function hideError() {
+      document.getElementById('error-banner').classList.add('hidden');
+    }
+
+    function clearResults() {
+      document.getElementById('results-area').classList.add('hidden');
+      document.getElementById('capability-section').classList.add('hidden');
+      document.getElementById('xbar-section').classList.add('hidden');
+      document.getElementById('rchart-section').classList.add('hidden');
+      document.getElementById('spc-note').classList.add('hidden');
+      document.getElementById('ooc-xbar').classList.add('hidden');
+      document.getElementById('ooc-rchart').classList.add('hidden');
+      ['stats-grid','capability-grid','xbar-limits','rchart-limits'].forEach(id => {
+        document.getElementById(id).innerHTML = '';
+      });
+      if (histogramChartInstance) { histogramChartInstance.destroy(); histogramChartInstance = null; }
+      if (xbarChartInstance)      { xbarChartInstance.destroy();      xbarChartInstance = null; }
+      if (rchartChartInstance)    { rchartChartInstance.destroy();     rchartChartInstance = null; }
+    }
+
+    // ─────────────────────────────────────────
+    //  DRAG-AND-DROP CSV
+    // ─────────────────────────────────────────
+    const dropZone = document.getElementById('drop-zone');
+    if (dropZone) {
+      dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('border-brand-blue'); });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('border-brand-blue'));
+      dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('border-brand-blue');
+        const file = e.dataTransfer.files[0];
+        if (file) {
+          const input = document.getElementById('csv-file');
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          input.files = dt.files;
+          handleCSV(input);
+        }
+      });
+    }
+
+    // Allow Ctrl+Enter to run analysis
+    document.addEventListener('keydown', e => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runAnalysis();
+    });
+  </script>
+
+</body>
+</html>

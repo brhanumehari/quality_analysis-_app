@@ -1,0 +1,25 @@
+# ─────────────────────────────────────────────────────────────────
+# Quality Engineering Statistical Analyzer — Python Dependencies
+# Created by: ENG-2518885 · meharibrhanu233@gmail.com
+# ─────────────────────────────────────────────────────────────────
+
+# Web framework
+Flask==3.0.3
+
+# Numerical computation
+numpy==1.26.4
+
+# Data wrangling (CSV parsing, DataFrame operations)
+pandas==2.2.2
+
+# Scientific / statistical functions (norm.pdf, skew, kurtosis)
+scipy==1.13.1
+
+# Werkzeug is a Flask dependency — pinned for WSGI stability
+Werkzeug==3.0.3
+
+# Jinja2 for HTML template rendering
+Jinja2==3.1.4
+
+# Click required by Flask CLI
+click==8.1.7
